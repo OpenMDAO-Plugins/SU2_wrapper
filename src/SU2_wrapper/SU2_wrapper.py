@@ -8,7 +8,10 @@ from openmdao.main.datatypes.api import Array, Float
 from openmdao.main.datatypes.file import File, FileRef
 
 from SU2.io import Config, State
+from SU2.io.tools import get_adjointSuffix, add_suffix
 from SU2.run import direct, deform, adjoint, projection
+from SU2.mesh.tools import read as meshread
+from SU2.mesh.tools import get_markerPoints
 
 # ------------------------------------------------------------
 #  Setup
@@ -46,14 +49,14 @@ class ConfigVar(Variable):
 
 def pts_from_mesh(meshfile, config):
 
-    mesh = SU2.mesh.tools.read(meshfile)
+    mesh = meshread(meshfile)
 
     markers = config.MARKER_MONITORING
     markers = markers.strip().strip('()').strip()
     markers = ''.join(markers.split())
     markers = markers.split(',')
 
-    _,nodes = SU2.mesh.tools.get_markerPoints(mesh,markers)
+    _,nodes = get_markerPoints(mesh,markers)
 
     return len(nodes)
 
@@ -79,13 +82,13 @@ class Deform(Component):
     dv_vals = Array([], iotype='in')
     config_out = ConfigVar(Config(), iotype='out', copy='deep')
 
-    def _config_in_changed(self):
+    def _config_in_changed(self, old, new):
         meshfile = self.config_in['MESH_FILENAME']
         # - read number of unique pts from mesh file
-        npts = pts_from_mesh(meshfile)
+        npts = pts_from_mesh(meshfile, self.config_in)
         # - create mesh_file trait with data_shape attribute
         self.add('mesh_file', File(iotype='out', data_shape=(npts,1)))
-        self.dv_vals = np.zeros(len(self.config.DEFINITION_DV['KIND']))
+        self.dv_vals = np.zeros(len(self.config_in.DEFINITION_DV['KIND']))
 
     def execute(self):
 	# local copy
@@ -144,8 +147,8 @@ class Solve(Component):
             config_in.ADJ_OBJ_FUNC = name
             state = adjoint(self.config_in)
             csvname = self.config_in.SURFACE_ADJ_FILENAME+'.csv'
-            suffix = SU2.io.tools.get_adjointSuffix(name)
-            csvname = SU2.io.tools.add_suffix(csvname, suffix)
+            suffix = get_adjointSuffix(name)
+            csvname = add_suffix(csvname, suffix)
             col = get_sensitivities(csvname)
             if self.J is None:
                 self.J = np.zeros((len(col),len(_obj_names)))
@@ -162,16 +165,21 @@ class Solve(Component):
 if __name__ == '__main__':
     from openmdao.main.api import set_as_top, Assembly
     
+    # need actual config file here
     myConfig = Config()
     
     model = set_as_top(Assembly())
     
     model.add('deform', Deform())
     model.add('solve', Solve())
+
+    myConfig.read('inv_NACA0012.cfg')
+    model.deform.config_in = myConfig
     
     model.connect('deform.mesh_file', 'solve.mesh_file')
-    model.deform.config_in.read('inv_NACA0012.cfg')
     
     model.driver.add('deform', 'solve')
 
     model.driver.run()
+
+
