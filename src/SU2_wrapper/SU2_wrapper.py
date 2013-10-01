@@ -105,13 +105,13 @@ class Deform(Component):
         with open(csvname, 'r') as infile:
             reader = csv.DictReader(infile)
         
-        # TODO- this is slow, rewrite it
+            # TODO- this is slow, rewrite it
         
-        for j, line in enumerate(reader):
-            line = [(int(k.strip().strip('"')),val) for k, val in line.iteritems() 
-                       if 'Design' not in k]
-            vals = [val for k, val in sorted(line.iteritems())]
-            self.JT[j, :] = vals
+            for j, line in enumerate(reader):
+                line = [(int(k.strip().strip('"')),val) for k, val in line.iteritems() 
+                           if 'Design' not in k]
+                vals = [val for k, val in sorted(line.iteritems())]
+                self.JT[j, :] = vals
 
     def apply_derivT(self, arg, result):
         """ Matrix vector multiplication on the transposed Jacobian"""
