@@ -135,6 +135,7 @@ class Solve(Component):
 
     config_in = ConfigVar(Config(), iotype='in')
     mesh_file = File(iotype='in')
+    AoA = Float(0, iotype="in")
 
     def __init__(self):
         super(Solve, self).__init__()
@@ -150,7 +151,7 @@ class Solve(Component):
             self._first_exec = False
         else:
             self.config_in.RESTART_SOL = "YES"
-            
+        self.config_in.AoA = self.AoA
         state = direct(self.config_in)
         restart2solution(self.config_in, state)
         for name in _obj_names:
