@@ -1,4 +1,4 @@
-__all__ = ['Direct']
+__all__ = ['Direct','Solve']
 
 import os, sys, copy
 import csv
