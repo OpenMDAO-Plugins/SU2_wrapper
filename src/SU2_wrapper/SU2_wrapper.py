@@ -1,13 +1,14 @@
 __all__ = ['Direct']
 
 import os, sys, copy
+import csv
 import numpy as np
 
 from openmdao.main.api import Component, Variable
 from openmdao.main.datatypes.api import Array, Float
 from openmdao.main.datatypes.file import File, FileRef
 
-from SU2.io import Config, State
+from SU2.io import Config, State, restart2solution
 from SU2.io.tools import get_adjointSuffix, add_suffix
 from SU2.run import direct, deform, adjoint, projection
 from SU2.mesh.tools import read as meshread
@@ -66,7 +67,7 @@ def get_sensitivities(csvfile):
         for i,line in enumerate(f):
             if i > 0:
                 parts = line.split(',')
-                sens.append(int(parts[0]), float(parts[1]))
+                sens.append((int(parts[0]), float(parts[1])))
     return [s for i,s in sorted(sens)]
 
 # ------------------------------------------------------------
@@ -77,14 +78,14 @@ class Deform(Component):
 
     config_in = ConfigVar(Config(), iotype='in')
     dv_vals = Array([], iotype='in')
-    config_out = ConfigVar(Config(), iotype='out', copy='deep')
+    config_out = ConfigVar(Config(), iotype='out', copy='deep', data_shape=(1,))
 
     def _config_in_changed(self, old, new):
         meshfile = self.config_in['MESH_FILENAME']
         # - read number of unique pts from mesh file
-        npts = pts_from_mesh(meshfile, self.config_in)
+        self.npts = pts_from_mesh(meshfile, self.config_in)
         # - create mesh_file trait with data_shape attribute
-        self.add('mesh_file', File(iotype='out', data_shape=(npts,1)))
+        self.add('mesh_file', File(iotype='out', data_shape=(self.npts,1)))
         self.dv_vals = np.zeros(len(self.config_in.DEFINITION_DV['KIND']))
 	self.config_out = self.config_in
 
@@ -98,24 +99,39 @@ class Deform(Component):
     def linearize(self):
         self.config_in.SURFACE_ADJ_FILENAME = self.config_in.SURFACE_FLOW_FILENAME
         projection(self.config_in)
+	
         # read Jacobian info from file
+	self.JT = np.zeros((len(self.dv_vals), self.npts))
+	csvname = 'geo_jacobian.csv'
+	with open(csvname, 'r') as infile:
+	    reader = csv.DictReader(infile)
+	    
+	    # TODO- this is slow, rewrite it
+	    
+	    for j, line in enumerate(reader):
+		line = {k.strip() : val for k, val in line.iteritems()}
+		del line['"DesignVariable"']
+	    
+		vals = [val for k, val in sorted(line.iteritems())]
+		self.JT[j, :] = vals
 
+		
     def apply_derivT(self, arg, result):
 	""" Matrix vector multiplication on the transposed Jacobian"""
 
 	if 'mesh_file' in arg and 'dv_vals' in result:
-	    result['dv_vals'] += self.J.dot(arg['mesh_file'])
+	    result['dv_vals'] += self.JT.dot(arg['mesh_file']).flatten()
       
 _obj_names = [
     "LIFT",
     "DRAG",
-    "SIDEFORCE",
-    "MOMENT_X",
-    "MOMENT_Y",
-    "MOMENT_Z",
-    "FORCE_X",
-    "FORCE_Y",
-    "FORCE_Z"
+    #"SIDEFORCE",
+    #"MOMENT_X",
+    #"MOMENT_Y",
+    #"MOMENT_Z",
+    #"FORCE_X",
+    #"FORCE_Y",
+    #"FORCE_Z"
 ]
 
 class Solve(Component):
@@ -135,6 +151,7 @@ class Solve(Component):
     def execute(self):
         # local copy
         state = direct(self.config_in)
+	restart2solution(self.config_in, state)
         for name in _obj_names:
             setattr(self, name, state.FUNCTIONS[name])
 
@@ -143,11 +160,10 @@ class Solve(Component):
 	
         self.J = None
         for i,name in enumerate(_obj_names):
-            config_in.ADJ_OBJ_FUNC = name
+            self.config_in.ADJ_OBJ_FUNC = name
             state = adjoint(self.config_in)
+	    restart2solution(self.config_in, state)
             csvname = self.config_in.SURFACE_ADJ_FILENAME+'.csv'
-            suffix = get_adjointSuffix(name)
-            csvname = add_suffix(csvname, suffix)
             col = get_sensitivities(csvname)
             if self.J is None:
                 self.J = np.zeros((len(col),len(_obj_names)))
@@ -182,6 +198,17 @@ if __name__ == '__main__':
 
     model.run()
     
+    inputs = ['deform.dv_vals']
+    outputs = ['solve.LIFT', 'solve.DRAG']
+    J = model.driver.workflow.calc_gradient(inputs=inputs,
+                                            outputs=outputs, 
+                                            mode='adjoint')
+    print J
+    print '---'
     
-
+    model.driver.workflow.config_changed()
+    J = model.driver.workflow.calc_gradient(inputs=inputs,
+                                            outputs=outputs, 
+                                            fd=True)    
+    print J
 
