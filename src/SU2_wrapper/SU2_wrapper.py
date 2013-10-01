@@ -88,7 +88,7 @@ class Deform(Component):
         self.dv_vals = np.zeros(len(self.config.DEFINITION_DV['KIND']))
 
     def execute(self):
-	    # local copy
+	# local copy
         state = deform(self.config_in)
         self.mesh_file = FileRef(path=state.FILES.MESH)
         self.config_out = self.config_in
