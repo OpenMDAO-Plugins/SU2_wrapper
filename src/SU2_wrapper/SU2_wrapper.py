@@ -26,7 +26,7 @@ base_Command = os.path.join(SU2_RUN,'%s')
 
 # check for slurm
 slurm_job = os.environ.has_key('SLURM_JOBID')
-    
+
 # set mpi command
 if slurm_job:
     mpi_Command = 'srun -n %i %s'
@@ -37,12 +37,12 @@ else:
 class ConfigVar(Variable):
     def __init__(self, default_value=None, **metadata):
         super(ConfigVar, self).__init__(default_value=default_value,
-                                    	**metadata)
+                                        **metadata)
 
     def validate(self, obj, name, value):
 
         if not isinstance(value, Config):
-	    raise TypeError("value of '%s' must be a Config object" % name)
+            raise TypeError("value of '%s' must be a Config object" % name)
         return value
 
 def pts_from_mesh(meshfile, config):
@@ -50,9 +50,6 @@ def pts_from_mesh(meshfile, config):
     mesh = meshread(meshfile)
 
     markers = config.MARKER_MONITORING
-    markers = markers.strip().strip('()').strip()
-    markers = ''.join(markers.split())
-    markers = markers.split(',')
 
     _,nodes = get_markerPoints(mesh,markers)
 
@@ -87,7 +84,7 @@ class Deform(Component):
         # - create mesh_file trait with data_shape attribute
         self.add('mesh_file', File(iotype='out', data_shape=(self.npts,1)))
         self.dv_vals = np.zeros(len(self.config_in.DEFINITION_DV['KIND']))
-	self.config_out = self.config_in
+        self.config_out = self.config_in
 
     def execute(self):
         # local copy
@@ -99,29 +96,29 @@ class Deform(Component):
     def linearize(self):
         self.config_in.SURFACE_ADJ_FILENAME = self.config_in.SURFACE_FLOW_FILENAME
         projection(self.config_in)
-	
+
         # read Jacobian info from file
-	self.JT = np.zeros((len(self.dv_vals), self.npts))
-	csvname = 'geo_jacobian.csv'
-	with open(csvname, 'r') as infile:
-	    reader = csv.DictReader(infile)
-	    
-	    # TODO- this is slow, rewrite it
-	    
-	    for j, line in enumerate(reader):
-		line = {k.strip() : val for k, val in line.iteritems()}
-		del line['"DesignVariable"']
-	    
-		vals = [val for k, val in sorted(line.iteritems())]
-		self.JT[j, :] = vals
+        self.JT = np.zeros((len(self.dv_vals), self.npts))
+        csvname = 'geo_jacobian.csv'
+        with open(csvname, 'r') as infile:
+            reader = csv.DictReader(infile)
 
-		
+            # TODO- this is slow, rewrite it
+
+            for j, line in enumerate(reader):
+                line = {k.strip() : val for k, val in line.iteritems()}
+                del line['"DesignVariable"']
+
+                vals = [val for k, val in sorted(line.iteritems())]
+                self.JT[j, :] = vals
+
+
     def apply_derivT(self, arg, result):
-	""" Matrix vector multiplication on the transposed Jacobian"""
+        """ Matrix vector multiplication on the transposed Jacobian"""
 
-	if 'mesh_file' in arg and 'dv_vals' in result:
-	    result['dv_vals'] += self.JT.dot(arg['mesh_file']).flatten()
-      
+        if 'mesh_file' in arg and 'dv_vals' in result:
+            result['dv_vals'] += self.JT.dot(arg['mesh_file']).flatten()
+
 _obj_names = [
     "LIFT",
     "DRAG",
@@ -138,7 +135,7 @@ class Solve(Component):
 
     config_in = ConfigVar(Config(), iotype='in')
     mesh_file = File(iotype='in')
-    
+
     def __init__(self):
         super(Solve, self).__init__()
         self.config_in = Config()
@@ -151,18 +148,18 @@ class Solve(Component):
     def execute(self):
         # local copy
         state = direct(self.config_in)
-	restart2solution(self.config_in, state)
+        restart2solution(self.config_in, state)
         for name in _obj_names:
             setattr(self, name, state.FUNCTIONS[name])
 
     def linearize(self):
-	""" Create jacobian from adjoint results."""
-	
+        """ Create jacobian from adjoint results."""
+
         self.J = None
         for i,name in enumerate(_obj_names):
-            self.config_in.ADJ_OBJ_FUNC = name
+            self.config_in.ADJ_OBJFUNC = name
             state = adjoint(self.config_in)
-	    restart2solution(self.config_in, state)
+            restart2solution(self.config_in, state)
             csvname = self.config_in.SURFACE_ADJ_FILENAME+'.csv'
             col = get_sensitivities(csvname)
             if self.J is None:
@@ -170,34 +167,34 @@ class Solve(Component):
             self.J[:,i] = np.array(col)
 
     def apply_derivT(self, arg, result):
-	""" Matrix vector multiplication on the transposed Jacobian"""
-	
-	if 'mesh_file' in result:
-	    for j, name in enumerate(_obj_names):
-		if name in arg:
-		    result['mesh_file'] += self.J[:, j]*arg[name]
-      
+        """ Matrix vector multiplication on the transposed Jacobian"""
+
+        if 'mesh_file' in result:
+            for j, name in enumerate(_obj_names):
+                if name in arg:
+                    result['mesh_file'] += self.J[:, j]*arg[name]
+
 if __name__ == '__main__':
     from openmdao.main.api import set_as_top, Assembly
-    
+
     # need actual config file here
     myConfig = Config()
-    
+
     model = set_as_top(Assembly())
-    
+
     model.add('deform', Deform())
     model.add('solve', Solve())
 
     myConfig.read('inv_NACA0012.cfg')
     model.deform.config_in = myConfig
-    
+
     model.connect('deform.mesh_file', 'solve.mesh_file')
     model.connect('deform.config_out', 'solve.config_in')
-    
+
     model.driver.workflow.add(['deform', 'solve'])
 
     model.run()
-    
+
     inputs = ['deform.dv_vals']
     outputs = ['solve.LIFT', 'solve.DRAG']
     J = model.driver.workflow.calc_gradient(inputs=inputs,
@@ -205,10 +202,9 @@ if __name__ == '__main__':
                                             mode='adjoint')
     print J
     print '---'
-    
+
     model.driver.workflow.config_changed()
     J = model.driver.workflow.calc_gradient(inputs=inputs,
                                             outputs=outputs, 
                                             fd=True)    
     print J
-
