@@ -139,14 +139,18 @@ class Solve(Component):
     def __init__(self):
         super(Solve, self).__init__()
         self.config_in = Config()
+        self._first_exec = True
+        self._first_lin = True
         for name in _obj_names:
             self.add_trait(name, Float(0.0, iotype='out'))
 
-    def configure(self):
-        pass
-
     def execute(self):
         # local copy
+        if self._first_exec:
+            self._first_exec = False
+        else:
+            self.config_in.RESTART_SOL = "YES"
+            
         state = direct(self.config_in)
         restart2solution(self.config_in, state)
         for name in _obj_names:
@@ -154,6 +158,11 @@ class Solve(Component):
 
     def linearize(self):
         """ Create jacobian from adjoint results."""
+
+        if self._first_lin:
+            self._first_lin = False
+        else:
+            self.config_in.RESTART_SOL = "YES"
 
         self.J = None
         for i, name in enumerate(_obj_names):
