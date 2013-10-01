@@ -34,8 +34,7 @@ else:
 
 
 class ConfigVar(Variable):
-    def __init__(self, default_value=None, iotype=None, desc=None, 
-                 **metadata):
+    def __init__(self, default_value=None, **metadata):
         super(ConfigVar, self).__init__(default_value=default_value,
                                     	**metadata)
 
@@ -87,10 +86,11 @@ class Deform(Component):
         # - create mesh_file trait with data_shape attribute
         self.add('mesh_file', File(iotype='out', data_shape=(npts,1)))
         self.dv_vals = np.zeros(len(self.config_in.DEFINITION_DV['KIND']))
+	self.config_out = self.config_in
 
     def execute(self):
-	# local copy
-	# TODO: SU2 deform needs to be able to take an array in, too
+        # local copy
+        # TODO: SU2 deform needs to be able to take an array in, too
         state = deform(self.config_in, list(self.dv_vals))
         self.mesh_file = FileRef(path=self.config_in.MESH_FILENAME)
         self.config_out = self.config_in
@@ -124,10 +124,10 @@ class Solve(Component):
     mesh_file = File(iotype='in')
     
     def __init__(self):
-	
-	super(Solve, self).__init__()
-	for name in _obj_names:
-	    self.add_trait(name, Float(0.0, iotype='out'))
+        super(Solve, self).__init__()
+        self.config_in = Config()
+        for name in _obj_names:
+            self.add_trait(name, Float(0.0, iotype='out'))
 
     def configure(self):
         pass
