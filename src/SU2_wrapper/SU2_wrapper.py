@@ -109,9 +109,9 @@ class Deform(Component):
 	    # TODO- this is slow, rewrite it
 	    
 	    for j, line in enumerate(reader):
-		line = {k.strip() : val for k, val in line.iteritems()}
-		del line['"DesignVariable"']
-	    
+		line = {int(k.strip().strip('"')) : val for k, val in line.iteritems()
+		        if 'Design' not in k}
+		
 		vals = [val for k, val in sorted(line.iteritems())]
 		self.JT[j, :] = vals
 
@@ -159,8 +159,8 @@ class Solve(Component):
 	""" Create jacobian from adjoint results."""
 	
         self.J = None
-        for i,name in enumerate(_obj_names):
-            self.config_in.ADJ_OBJ_FUNC = name
+        for i, name in enumerate(_obj_names):
+            self.config_in.ADJ_OBJFUNC = name
             state = adjoint(self.config_in)
 	    restart2solution(self.config_in, state)
             csvname = self.config_in.SURFACE_ADJ_FILENAME+'.csv'
