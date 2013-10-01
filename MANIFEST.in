@@ -1,0 +1,3 @@
+graft src/SU2_wrapper/sphinx_build/html
+recursive-include src/SU2_wrapper/test *.py
+
