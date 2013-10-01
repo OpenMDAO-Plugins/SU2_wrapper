@@ -84,33 +84,34 @@ class Deform(Component):
         # - create mesh_file trait with data_shape attribute
         self.add('mesh_file', File(iotype='out', data_shape=(self.npts,1)))
         self.dv_vals = np.zeros(len(self.config_in.DEFINITION_DV['KIND']))
-        self.config_out = self.config_in
+        self.config_out = copy.deepcopy(self.config_in)
 
     def execute(self):
         # local copy
         # TODO: SU2 deform needs to be able to take an array in, too
-        state = deform(self.config_in, list(self.dv_vals))
-        self.mesh_file = FileRef(path=self.config_in.MESH_FILENAME)
-        self.config_out = self.config_in
+        self.config_out = copy.deepcopy(self.config_in)
+        state = deform(self.config_out, list(self.dv_vals))
+        self.mesh_file = FileRef(path=self.config_out.MESH_FILENAME)
 
     def linearize(self):
-        self.config_in.SURFACE_ADJ_FILENAME = self.config_in.SURFACE_FLOW_FILENAME
-        projection(self.config_in)
+        # HACK!
+        config = copy.deepcopy(self.config_in)
+        config.SURFACE_ADJ_FILENAME = config.SURFACE_FLOW_FILENAME
+        projection(config)
 
         # read Jacobian info from file
-	self.JT = np.zeros((len(self.dv_vals), self.npts))
-	csvname = 'geo_jacobian.csv'
-	with open(csvname, 'r') as infile:
-	    reader = csv.DictReader(infile)
-	    
-	    # TODO- this is slow, rewrite it
-	    
-	    for j, line in enumerate(reader):
-		line = {int(k.strip().strip('"')) : val for k, val in line.iteritems()
-		        if 'Design' not in k}
-		
-		vals = [val for k, val in sorted(line.iteritems())]
-		self.JT[j, :] = vals
+        self.JT = np.zeros((len(self.dv_vals), self.npts))
+        csvname = 'geo_jacobian.csv'
+        with open(csvname, 'r') as infile:
+            reader = csv.DictReader(infile)
+        
+        # TODO- this is slow, rewrite it
+        
+        for j, line in enumerate(reader):
+            line = [(int(k.strip().strip('"')),val) for k, val in line.iteritems() 
+                       if 'Design' not in k]
+            vals = [val for k, val in sorted(line.iteritems())]
+            self.JT[j, :] = vals
 
     def apply_derivT(self, arg, result):
         """ Matrix vector multiplication on the transposed Jacobian"""
