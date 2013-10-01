@@ -40,11 +40,9 @@ class ConfigVar(Variable):
                                     	**metadata)
 
     def validate(self, obj, name, value):
-        """ Validates that a specified value is valid for this trait.
-        Units are converted as needed.
-        """
+
         if not isinstance(value, Config):
-        	raise TypeError("value of '%s' must be a Config object" % name)
+	    raise TypeError("value of '%s' must be a Config object" % name)
         return value
 
 def pts_from_mesh(meshfile, config):
@@ -92,8 +90,9 @@ class Deform(Component):
 
     def execute(self):
 	# local copy
-        state = deform(self.config_in)
-        self.mesh_file = FileRef(path=state.FILES.MESH)
+	# TODO: SU2 deform needs to be able to take an array in, too
+        state = deform(self.config_in, list(self.dv_vals))
+        self.mesh_file = FileRef(path=self.config_in.MESH_FILENAME)
         self.config_out = self.config_in
 
     def linearize(self):
@@ -177,9 +176,12 @@ if __name__ == '__main__':
     model.deform.config_in = myConfig
     
     model.connect('deform.mesh_file', 'solve.mesh_file')
+    model.connect('deform.config_out', 'solve.config_in')
     
-    model.driver.add('deform', 'solve')
+    model.driver.workflow.add(['deform', 'solve'])
 
-    model.driver.run()
+    model.run()
+    
+    
 
 
