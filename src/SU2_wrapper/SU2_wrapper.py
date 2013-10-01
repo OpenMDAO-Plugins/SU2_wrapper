@@ -4,7 +4,7 @@ import os, sys, copy
 import numpy as np
 
 from openmdao.main.api import Component, Variable
-from openmdao.main.datatypes.api import Array
+from openmdao.main.datatypes.api import Array, Float
 from openmdao.main.datatypes.file import File, FileRef
 
 from SU2.io import Config, State
@@ -79,8 +79,8 @@ class Deform(Component):
     dv_vals = Array([], iotype='in')
     config_out = ConfigVar(Config(), iotype='out', copy='deep')
 
-    def configure(self):
-        meshfile = self.config.MESH_FILENAME
+    def _config_in_changed(self):
+        meshfile = self.config_in['MESH_FILENAME']
         # - read number of unique pts from mesh file
         npts = pts_from_mesh(meshfile)
         # - create mesh_file trait with data_shape attribute
@@ -120,8 +120,12 @@ class Solve(Component):
 
     config_in = ConfigVar(Config(), iotype='in')
     mesh_file = File(iotype='in')
-    for name in _obj_names:
-        setattr(Solve, name, Float(0.0, iotype='out'))
+    
+    def __init__(self):
+	
+	super(Solve, self).__init__()
+	for name in _obj_names:
+	    self.add_trait(name, Float(0.0, iotype='out'))
 
     def configure(self):
         pass
@@ -156,4 +160,18 @@ class Solve(Component):
 		    result['mesh_file'] += self.J[:, j]*arg[name]
       
 if __name__ == '__main__':
-    pass
+    from openmdao.main.api import set_as_top, Assembly
+    
+    myConfig = Config()
+    
+    model = set_as_top(Assembly())
+    
+    model.add('deform', Deform())
+    model.add('solve', Solve())
+    
+    model.connect('deform.mesh_file', 'solve.mesh_file')
+    model.deform.config_in.read('inv_NACA0012.cfg')
+    
+    model.driver.add('deform', 'solve')
+
+    model.driver.run()
