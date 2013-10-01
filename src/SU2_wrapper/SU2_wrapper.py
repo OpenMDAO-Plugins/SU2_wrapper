@@ -110,7 +110,7 @@ class Deform(Component):
             for j, line in enumerate(reader):
                 line = [(int(k.strip().strip('"')),val) for k, val in line.iteritems() 
                            if 'Design' not in k]
-                vals = [val for k, val in sorted(line.iteritems())]
+                vals = [val for k, val in sorted(line)]
                 self.JT[j, :] = vals
 
     def apply_derivT(self, arg, result):
