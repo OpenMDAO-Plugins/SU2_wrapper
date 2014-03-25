@@ -75,7 +75,7 @@ class Deform(Component):
 
     config_in = ConfigVar(Config(), iotype='in')
     dv_vals = Array([], iotype='in')
-    config_out = ConfigVar(Config(), iotype='out', copy='deep', data_shape=(1,))
+    config_out = ConfigVar(Config(), iotype='out', copy='deep', deriv_ignore=True)
 
     def _config_in_changed(self, old, new):
         meshfile = self.config_in['MESH_FILENAME']
@@ -93,7 +93,10 @@ class Deform(Component):
         state = deform(self.config_out, list(self.dv_vals))
         self.mesh_file = FileRef(path=self.config_out.MESH_FILENAME)
 
-    def linearize(self):
+    def list_deriv_vars(self): 
+        return ('dv_vals',), ('mesh_file')
+
+    def provideJ(self):
         # HACK!
         config = copy.deepcopy(self.config_in)
         config.SURFACE_ADJ_FILENAME = config.SURFACE_FLOW_FILENAME
@@ -155,7 +158,10 @@ class Solve(Component):
         for name in _obj_names:
             setattr(self, name, state.FUNCTIONS[name])
 
-    def linearize(self):
+    def list_deriv_vars(self): 
+        return ('LIFT','DRAG'), ('mesh_file')
+
+    def provideJ(self):
         """ Create jacobian from adjoint results."""
 
         if self._first_lin:

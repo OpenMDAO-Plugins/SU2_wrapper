@@ -1,10 +1,10 @@
-
 from openmdao.main.api import Component, Variable, Assembly, set_as_top
 from openmdao.main.datatypes.api import Array, Float
 from openmdao.main.datatypes.file import File, FileRef
 from openmdao.lib.drivers.api import SLSQPdriver
 
 from SU2_wrapper import Deform, Solve, Config
+
 
 class OptModel(Assembly):
 
