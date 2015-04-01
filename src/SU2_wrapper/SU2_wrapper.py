@@ -73,32 +73,37 @@ def get_sensitivities(csvfile):
 
 class Deform(Component):
 
-    config_in = ConfigVar(Config(), iotype='in')
     dv_vals = Array([], iotype='in')
+    
     config_out = ConfigVar(Config(), iotype='out', copy='deep', deriv_ignore=True)
+    mesh_file = File(iotype='out', deriv_ignore=True)
+    mesh = Array([], iotype='out')
 
-    def _config_in_changed(self, old, new):
-        meshfile = self.config_in['MESH_FILENAME']
+    def __init__(self, config):
+        self.config_out = config
+        super(Deform, self).__init__()
+        
+        meshfile = self.config_out['MESH_FILENAME']
+        
         # - read number of unique pts from mesh file
-        self.npts = pts_from_mesh(meshfile, self.config_in)
-        # - create mesh_file trait with data_shape attribute
-        self.add('mesh_file', File(iotype='out', data_shape=(self.npts,1)))
-        self.dv_vals = np.zeros(len(self.config_in.DEFINITION_DV['KIND']))
-        self.config_out = copy.deepcopy(self.config_in)
-
+        self.npts = pts_from_mesh(meshfile, self.config_out)
+        
+        # - differentible variables must be initialized
+        self.mesh = np.zeros((self.npts, 1))
+        self.dv_vals = np.zeros(len(self.config_out.DEFINITION_DV['KIND']))
+        
     def execute(self):
         # local copy
         # TODO: SU2 deform needs to be able to take an array in, too
-        self.config_out = copy.deepcopy(self.config_in)
         state = deform(self.config_out, list(self.dv_vals))
         self.mesh_file = FileRef(path=self.config_out.MESH_FILENAME)
 
     def list_deriv_vars(self): 
-        return ('dv_vals',), ('mesh_file')
+        return ('dv_vals',), ('mesh',)
 
     def provideJ(self):
         # HACK!
-        config = copy.deepcopy(self.config_in)
+        config = copy.deepcopy(self.config_out)
         config.SURFACE_ADJ_FILENAME = config.SURFACE_FLOW_FILENAME
         projection(config)
 
@@ -116,11 +121,17 @@ class Deform(Component):
                 vals = [val for k, val in sorted(line)]
                 self.JT[j, :] = vals
 
+    def apply_deriv(self, arg, result):
+        """ Matrix vector multiplication on the Jacobian"""
+
+        if 'mesh' in arg and 'dv_vals' in result:
+            result['mesh'] += self.JT.T.dot(arg['dv_vals']).flatten()
+
     def apply_derivT(self, arg, result):
         """ Matrix vector multiplication on the transposed Jacobian"""
 
-        if 'mesh_file' in arg and 'dv_vals' in result:
-            result['dv_vals'] += self.JT.dot(arg['mesh_file']).flatten()
+        if 'mesh' in arg and 'dv_vals' in result:
+            result['dv_vals'] += self.JT.dot(arg['mesh']).flatten()
 
 _obj_names = [
     "LIFT",
@@ -136,8 +147,9 @@ _obj_names = [
 
 class Solve(Component):
 
-    config_in = ConfigVar(Config(), iotype='in')
-    mesh_file = File(iotype='in')
+    config_in = ConfigVar(Config(), iotype='in', deriv_ignore=True)
+    mesh_file = File(iotype='in', deriv_ignore=True)
+    mesh = Array([], iotype='in')
 
     def __init__(self):
         super(Solve, self).__init__()
@@ -159,7 +171,7 @@ class Solve(Component):
             setattr(self, name, state.FUNCTIONS[name])
 
     def list_deriv_vars(self): 
-        return ('LIFT','DRAG'), ('mesh_file')
+        return ('LIFT','DRAG'), ('mesh',)
 
     def provideJ(self):
         """ Create jacobian from adjoint results."""
@@ -180,29 +192,36 @@ class Solve(Component):
                 self.J = np.zeros((len(col),len(_obj_names)))
             self.J[:,i] = np.array(col)
 
+    def apply_deriv(self, arg, result):
+        """ Matrix vector multiplication on the Jacobian"""
+
+        if 'mesh' in result:
+            for j, name in enumerate(_obj_names):
+                if name in result:
+                    result[name] += self.J.T[:, j]*arg['mesh']
+
     def apply_derivT(self, arg, result):
         """ Matrix vector multiplication on the transposed Jacobian"""
 
-        if 'mesh_file' in result:
+        if 'mesh' in result:
             for j, name in enumerate(_obj_names):
                 if name in arg:
-                    result['mesh_file'] += self.J[:, j]*arg[name]
+                    result['mesh'] += self.J[:, j]*arg[name]
 
 if __name__ == '__main__':
     from openmdao.main.api import set_as_top, Assembly
 
     # need actual config file here
     myConfig = Config()
+    myConfig.read('inv_NACA0012.cfg')
 
     model = set_as_top(Assembly())
 
-    model.add('deform', Deform())
+    model.add('deform', Deform(myConfig))
     model.add('solve', Solve())
 
-    myConfig.read('inv_NACA0012.cfg')
-    model.deform.config_in = myConfig
-
     model.connect('deform.mesh_file', 'solve.mesh_file')
+    model.connect('deform.mesh', 'solve.mesh')
     model.connect('deform.config_out', 'solve.config_in')
 
     model.driver.workflow.add(['deform', 'solve'])
@@ -211,14 +230,13 @@ if __name__ == '__main__':
 
     inputs = ['deform.dv_vals']
     outputs = ['solve.LIFT', 'solve.DRAG']
-    J = model.driver.workflow.calc_gradient(inputs=inputs,
-                                            outputs=outputs, 
-                                            mode='adjoint')
+    J = model.driver.calc_gradient(inputs=inputs,
+                                   outputs=outputs, 
+                                   mode='adjoint')
     print J
     print '---'
 
-    model.driver.workflow.config_changed()
-    J = model.driver.workflow.calc_gradient(inputs=inputs,
-                                            outputs=outputs, 
-                                            fd=True)    
+    J = model.driver.calc_gradient(inputs=inputs,
+                                   outputs=outputs, 
+                                   fd=True)    
     print J
